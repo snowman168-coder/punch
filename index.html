@@ -1,0 +1,395 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>員工打卡</title>
+<script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<style>
+  :root{
+    --bg:#F4F6F5; --card:#FFFFFF; --text:#1B1F1D; --muted:#6B7470; --line:#E3E7E5;
+    --accent:#06C755; --ot:#3B5BDB; --warn:#E8590C; --danger:#E03131;
+    --ok-bg:#E6F9EE; --ok-ink:#04893B; --hol-bg:#FFF0E6; --bad-bg:#FFE3E3;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --bg:#111413; --card:#1B1F1D; --text:#EEF1EF; --muted:#9AA39F; --line:#2B312E;
+      --ok-bg:#12321F; --ok-ink:#5BE08F; --hol-bg:#3A2414; --bad-bg:#3B1A1A; }
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--text)}
+  body{font-family:-apple-system,BlinkMacSystemFont,"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif;-webkit-tap-highlight-color:transparent}
+  .wrap{max-width:520px;margin:0 auto;padding:16px 16px calc(28px + env(safe-area-inset-bottom))}
+  header{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:12px}
+  #company{font-size:13px;color:var(--muted)}
+  #who{font-weight:700}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:12px}
+  .hero{text-align:center}
+  #date{color:var(--muted);font-size:14px}
+  .badge{display:inline-block;font-size:12px;padding:2px 8px;border-radius:99px;margin-left:6px;background:var(--ok-bg);color:var(--ok-ink)}
+  .badge.holiday{background:var(--hol-bg);color:var(--warn)}
+  #clock{font-size:46px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:1px;margin:4px 0}
+  #status{font-size:14px;color:var(--muted)}
+  .tip{font-size:13px;color:var(--warn);background:var(--hol-bg);border-radius:10px;padding:8px 12px;margin-bottom:12px}
+  h2{font-size:14px;color:var(--muted);font-weight:600;margin:18px 4px 8px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  button{font:inherit;border:0;cursor:pointer;color:inherit}
+  .pbtn{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 8px;font-size:17px;font-weight:700}
+  .pbtn small{display:block;font-size:12px;font-weight:400;color:var(--muted);margin-top:2px}
+  .pbtn.next{background:var(--accent);border-color:var(--accent);color:#fff}
+  .pbtn.ot.next{background:var(--ot);border-color:var(--ot)}
+  .pbtn.next small{color:rgba(255,255,255,.85)}
+  .block{display:block;width:100%;padding:14px;border-radius:12px;font-size:16px;font-weight:700;background:var(--accent);color:#fff}
+  .block.ghost{background:var(--card);border:1px solid var(--line);color:var(--text)}
+  body.busy button{pointer-events:none;opacity:.55}
+  input[type=text],textarea{width:100%;font:inherit;font-size:16px;padding:12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--text)}
+  textarea{resize:vertical;margin:10px 0}
+  .mhead{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+  .mname{font-size:18px;font-weight:700}
+  .muted{color:var(--muted);font-size:13px}
+  .x{background:none;font-size:18px;padding:4px 8px;color:var(--muted)}
+  .seg{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0}
+  .seg input{display:none}
+  .seg span{display:block;text-align:center;padding:10px;border-radius:10px;border:1px solid var(--line);font-weight:700}
+  .seg input:checked + span{background:var(--ok-bg);color:var(--ok-ink);border-color:var(--ok-ink)}
+  .seg input[value="異常"]:checked + span{background:var(--bad-bg);color:var(--danger);border-color:var(--danger)}
+  .chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+  .chip input{display:none}
+  .chip span{display:inline-block;padding:7px 12px;border-radius:99px;border:1px solid var(--line);font-size:14px}
+  .chip input:checked + span{background:var(--bad-bg);color:var(--danger);border-color:var(--danger)}
+  .records{list-style:none;margin:0;padding:0}
+  .records li{display:flex;gap:12px;padding:9px 0;border-bottom:1px solid var(--line);font-size:15px}
+  .records li:last-child{border-bottom:0}
+  .records .t{font-variant-numeric:tabular-nums;color:var(--muted);min-width:44px}
+  .records li.bad .d{color:var(--danger)}
+  .records li.empty{color:var(--muted);justify-content:center}
+  #toast{position:fixed;left:16px;right:16px;bottom:calc(20px + env(safe-area-inset-bottom));max-width:488px;margin:0 auto;
+    padding:12px 14px;border-radius:12px;background:#1B1F1D;color:#fff;font-size:15px;text-align:center;
+    box-shadow:0 6px 24px rgba(0,0,0,.25);opacity:0;transform:translateY(10px);transition:.2s;pointer-events:none}
+  #toast.show{opacity:1;transform:none}
+  #toast.err{background:var(--danger)} #toast.warn{background:var(--warn)} #toast.ok{background:#04893B}
+  #loading{text-align:center;color:var(--muted);padding:60px 0}
+  [hidden]{display:none !important}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header><span id="company"></span><span id="who"></span></header>
+
+  <section id="loading"><div id="loadingMsg">載入中…</div></section>
+
+  <!-- 第一次使用：綁定 -->
+  <section id="bindView" hidden>
+    <div class="card">
+      <p id="bindHello" style="margin-top:0"></p>
+      <input id="bindCode" type="text" placeholder="綁定碼（6 碼）" autocomplete="off" autocapitalize="characters">
+      <div style="height:12px"></div>
+      <button id="bindBtn" class="block">綁定</button>
+    </div>
+  </section>
+
+  <!-- 主畫面 -->
+  <section id="mainView" hidden>
+    <div class="card hero">
+      <div><span id="date"></span><span id="dayBadge" class="badge"></span></div>
+      <div id="clock">--:--:--</div>
+      <div id="status"></div>
+    </div>
+    <div id="holidayTip" class="tip" hidden>今天是假日，上班請使用「假日加班」打卡</div>
+
+    <div id="attSection">
+      <h2>出勤</h2>
+      <div class="grid">
+        <button class="pbtn" data-type="上班">上班<small>早上到班</small></button>
+        <button class="pbtn" data-type="下班">下班<small>下午離開</small></button>
+        <button class="pbtn" data-type="午休開始">午休開始<small>中午下班</small></button>
+        <button class="pbtn" data-type="午休結束">午休結束<small>中午上班</small></button>
+      </div>
+    </div>
+
+    <div id="otSection">
+      <h2 id="otTitle">加班</h2>
+      <div class="grid">
+        <button class="pbtn ot" data-type="加班開始">加班開始<small id="otHint1"></small></button>
+        <button class="pbtn ot" data-type="加班結束">加班結束<small id="otHint2"></small></button>
+      </div>
+    </div>
+
+    <h2>機台巡檢</h2>
+    <div id="machineCard" class="card" hidden>
+      <div class="mhead">
+        <div><div id="mName" class="mname"></div><div id="mLoc" class="muted"></div></div>
+        <button id="mClose" class="x" aria-label="關閉">✕</button>
+      </div>
+      <div id="mItems" class="muted" style="margin-top:6px"></div>
+      <div class="seg">
+        <label><input type="radio" name="result" value="正常" checked><span>✓ 正常</span></label>
+        <label><input type="radio" name="result" value="異常"><span>! 異常</span></label>
+      </div>
+      <div id="issueBox" hidden>
+        <div class="muted">勾選異常項目</div>
+        <div id="issueList" class="chips"></div>
+      </div>
+      <textarea id="mNote" rows="2" placeholder="說明（選填，異常時建議填寫）"></textarea>
+      <button id="mSubmit" class="block">送出巡檢打卡</button>
+    </div>
+    <button id="scanBtn" class="block ghost">📷 掃描機台 QR Code</button>
+
+    <h2>今日紀錄</h2>
+    <div class="card"><ul id="records" class="records"></ul></div>
+  </section>
+</div>
+<div id="toast"></div>
+
+<script>
+/* ====== 只需要改這兩行 ====== */
+const LIFF_ID = 'YOUR_LIFF_ID';
+const GAS_URL = 'YOUR_GAS_WEB_APP_URL';
+/* ========================== */
+
+const T = { IN:'上班', LUNCH_OUT:'午休開始', LUNCH_IN:'午休結束', OUT:'下班', OT_IN:'加班開始', OT_OUT:'加班結束' };
+const $ = (id) => document.getElementById(id);
+const S = { dayType:'平日', machine:null, busy:false, records:{ punches:[], inspections:[], otOpen:false } };
+
+window.addEventListener('load', main);
+
+async function main(){
+  tick(); setInterval(tick, 1000);
+  try{
+    if (LIFF_ID.startsWith('YOUR') || GAS_URL.startsWith('YOUR')) throw new Error('請先在 index.html 填入 LIFF_ID 與 GAS_URL');
+    await liff.init({ liffId: LIFF_ID });
+    if (!liff.isLoggedIn()) { liff.login({ redirectUri: location.href }); return; }
+    await boot();
+  }catch(e){ fatal(e.message); }
+}
+
+async function boot(){
+  const machineId = new URLSearchParams(location.search).get('machine');
+  const r = await api('bootstrap', { machineId });
+  $('company').textContent = r.company || '';
+  show('loading', false);
+
+  if (!r.bound){
+    $('bindHello').textContent = `${r.lineName || ''} 您好！第一次使用請輸入管理員給您的綁定碼。`;
+    show('bindView', true);
+    return;
+  }
+
+  $('who').textContent = r.emp.name;
+  S.dayType = r.dayType;
+  $('date').textContent = `${r.date}（${r.weekday}）`;
+  const b = $('dayBadge');
+  b.textContent = r.dayType;
+  b.classList.toggle('holiday', r.dayType === '假日');
+  $('otTitle').textContent = r.dayType + '加班';
+  $('otHint1').textContent = $('otHint2').textContent = r.dayType + '加班';
+  if (r.dayType === '假日'){
+    const att = $('attSection');
+    att.parentNode.insertBefore($('otSection'), att);
+    $('holidayTip').hidden = false;
+  }
+
+  setRecords(r.records);
+  if (r.machine) openMachine(r.machine);
+  else if (machineId) toast(`找不到機台「${machineId}」，請洽管理員`, 'err');
+  show('mainView', true);
+}
+
+/* ---------- API ---------- */
+async function api(action, data = {}){
+  const idToken = liff.getIDToken();
+  if (!idToken) throw new Error('無法取得 LINE 身分，請從 LINE 開啟此頁面');
+  let res;
+  try{
+    // 不設 Content-Type（預設 text/plain），避免 CORS 預檢，Apps Script 才收得到
+    const r = await fetch(GAS_URL, { method:'POST', body: JSON.stringify({ action, idToken, ...data }) });
+    res = await r.json();
+  }catch(_){
+    throw new Error('無法連線到後端，請確認網路，或請管理員檢查 GAS_URL 與部署權限');
+  }
+  if (!res.ok) throw new Error(res.error || '發生錯誤');
+  return res;
+}
+
+async function run(fn){
+  if (S.busy) return;
+  S.busy = true; document.body.classList.add('busy');
+  try{ await fn(); }
+  catch(e){ toast(e.message, 'err'); }
+  finally{ S.busy = false; document.body.classList.remove('busy'); }
+}
+
+function getPosition(){
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) return reject(new Error('此裝置不支援定位'));
+    navigator.geolocation.getCurrentPosition(
+      p => resolve({ lat:p.coords.latitude, lng:p.coords.longitude, acc:Math.round(p.coords.accuracy) }),
+      err => reject(new Error(err.code === 1
+        ? '請允許定位權限（手機「設定」→ LINE → 位置 → 使用期間）'
+        : '定位失敗，請確認 GPS 已開啟後再試一次')),
+      { enableHighAccuracy:true, timeout:15000, maximumAge:0 });
+  });
+}
+
+/* ---------- 綁定 ---------- */
+$('bindBtn').onclick = () => run(async () => {
+  const code = $('bindCode').value.trim();
+  if (!code) throw new Error('請輸入綁定碼');
+  const r = await api('bind', { code });
+  toast(`綁定成功：${r.name}`, 'ok');
+  show('bindView', false); show('loading', true);
+  await boot();
+});
+
+/* ---------- 打卡 ---------- */
+document.querySelectorAll('[data-type]').forEach(btn => {
+  btn.onclick = () => punch(btn.dataset.type);
+});
+
+function punch(type){
+  const label = type.startsWith('加班') ? S.dayType + type : type;
+  if (!confirm(`確定打「${label}」卡？`)) return;
+  run(async () => {
+    toast('定位中…');
+    const pos = await getPosition();
+    const r = await api('punch', { type, ...pos });
+    setRecords(r.records);
+    toast(`✅ ${label} 打卡成功 ${r.time}` + (r.warning ? `（${r.warning}）` : ''), r.warning ? 'warn' : 'ok');
+  });
+}
+
+/* ---------- 巡檢 ---------- */
+$('scanBtn').onclick = () => run(async () => {
+  if (!liff.isApiAvailable('scanCodeV2')) throw new Error('這裡無法開相機，請直接用 LINE 的 QR 掃描器掃機台上的 QR Code');
+  const { value } = await liff.scanCodeV2();
+  if (!value) return;
+  let id = value.trim();
+  try{
+    const u = new URL(id);
+    const state = u.searchParams.get('liff.state') || '';
+    id = u.searchParams.get('machine')
+      || new URLSearchParams(state.includes('?') ? state.split('?')[1] : '').get('machine')
+      || id;
+  }catch(_){ /* 不是網址，就把內容當機台編號 */ }
+  const r = await api('machine', { machineId:id });
+  openMachine(r.machine);
+});
+
+function openMachine(m){
+  S.machine = m;
+  $('mName').textContent = `${m.name}（${m.id}）`;
+  $('mLoc').textContent = m.location || '';
+  $('mItems').textContent = m.items.length ? '檢查項目：' + m.items.join('、') : '';
+  const list = $('issueList');
+  list.innerHTML = '';
+  (m.items.length ? m.items : ['其他']).forEach(it => {
+    const l = document.createElement('label');
+    l.className = 'chip';
+    l.innerHTML = '<input type="checkbox"><span></span>';
+    l.querySelector('input').value = it;
+    l.querySelector('span').textContent = it;
+    list.appendChild(l);
+  });
+  document.querySelector('input[name=result][value="正常"]').checked = true;
+  $('issueBox').hidden = true;
+  $('mNote').value = '';
+  $('machineCard').hidden = false;
+  $('scanBtn').hidden = true;
+  setTimeout(() => $('machineCard').scrollIntoView({ behavior:'smooth', block:'center' }), 50);
+}
+
+function closeMachine(){
+  S.machine = null;
+  $('machineCard').hidden = true;
+  $('scanBtn').hidden = false;
+  if (location.search) history.replaceState(null, '', location.pathname);
+}
+
+$('mClose').onclick = closeMachine;
+document.querySelectorAll('input[name=result]').forEach(r => {
+  r.onchange = () => { $('issueBox').hidden = document.querySelector('input[name=result]:checked').value !== '異常'; };
+});
+
+$('mSubmit').onclick = () => run(async () => {
+  const result = document.querySelector('input[name=result]:checked').value;
+  const issues = [...$('issueList').querySelectorAll('input:checked')].map(i => i.value);
+  const note = $('mNote').value.trim();
+  if (result === '異常' && !issues.length && !note) throw new Error('請勾選異常項目或填寫說明');
+  toast('定位中…');
+  const pos = await getPosition();
+  const r = await api('inspect', { machineId:S.machine.id, result, issues, note, ...pos });
+  setRecords(r.records);
+  closeMachine();
+  toast(`✅ ${r.machine} 巡檢完成（${r.result}）`, r.result === '異常' ? 'warn' : 'ok');
+});
+
+/* ---------- 畫面 ---------- */
+function setRecords(rec){
+  S.records = rec || { punches:[], inspections:[], otOpen:false };
+  const items = [
+    ...S.records.punches.map(p => ({
+      time:p.time,
+      text:(p.category && p.category !== '正常' ? p.category.replace('加班','') : '') + p.type,
+      note:p.note, cls:'',
+    })),
+    ...S.records.inspections.map(i => ({
+      time:i.time,
+      text:`巡檢 ${i.machine}`,
+      note:i.result === '異常' ? '異常' + (i.issues ? '：' + i.issues : '') : '正常',
+      cls:i.result === '異常' ? 'bad' : '',
+    })),
+  ].sort((a, b) => a.time.localeCompare(b.time));
+
+  const ul = $('records');
+  ul.innerHTML = '';
+  if (!items.length) ul.innerHTML = '<li class="empty">今天還沒有紀錄</li>';
+  items.forEach(it => {
+    const li = document.createElement('li');
+    li.className = it.cls;
+    li.innerHTML = '<span class="t"></span><span class="d"></span>';
+    li.querySelector('.t').textContent = it.time;
+    li.querySelector('.d').textContent = it.text + (it.note ? ' · ' + it.note : '');
+    ul.appendChild(li);
+  });
+
+  // 提示下一步要按哪個
+  const done = S.records.punches.map(p => p.type);
+  let next = null;
+  if (S.dayType !== '假日'){
+    next = [T.IN, T.LUNCH_OUT, T.LUNCH_IN, T.OUT].find(t => !done.includes(t)) || null;
+  }
+  const otNext = S.records.otOpen ? T.OT_OUT : null;
+  document.querySelectorAll('[data-type]').forEach(b => {
+    b.classList.toggle('next', b.dataset.type === next || b.dataset.type === otNext);
+  });
+
+  const last = S.records.punches[S.records.punches.length - 1];
+  $('status').textContent = S.records.otOpen ? '⏱ 加班進行中'
+    : last ? `最後打卡：${last.type} ${last.time}` : '今日尚未打卡';
+}
+
+function tick(){
+  $('clock').textContent = new Date().toLocaleTimeString('zh-TW', { hour12:false, timeZone:'Asia/Taipei' });
+}
+
+function show(id, on){ $(id).hidden = !on; }
+
+let toastTimer;
+function toast(msg, kind = ''){
+  const t = $('toast');
+  t.textContent = msg;
+  t.className = 'show ' + kind;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.className = kind; }, kind === 'err' ? 5000 : 3500);
+}
+
+function fatal(msg){
+  show('mainView', false); show('bindView', false); show('loading', true);
+  $('loadingMsg').innerHTML = '';
+  const p = document.createElement('p'); p.textContent = msg;
+  const b = document.createElement('button'); b.className = 'block ghost'; b.textContent = '重新載入';
+  b.onclick = () => location.reload();
+  $('loadingMsg').append(p, b);
+}
+</script>
+</body>
+</html>
