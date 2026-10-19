@@ -90,10 +90,10 @@
   #toast.err{background:var(--danger)} #toast.warn{background:var(--warn)} #toast.ok{background:var(--navy)}
   #loading{text-align:center;color:var(--muted);padding:60px 0}
   /* 外勤打卡視窗 */
-  #remoteSheet{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:flex-end;justify-content:center;z-index:10}
-  #remoteSheet .panel{width:100%;max-width:520px;background:var(--card);border-radius:18px 18px 0 0;
+  .sheet{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:flex-end;justify-content:center;z-index:10}
+  .sheet .panel{width:100%;max-width:520px;background:var(--card);border-radius:18px 18px 0 0;
     padding:18px 16px calc(18px + env(safe-area-inset-bottom));max-height:90vh;overflow:auto}
-  #remoteSheet h3{margin:0 0 4px;font-size:18px}
+  .sheet h3{margin:0 0 4px;font-size:18px}
   #rReasons{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0 4px}
   #rReasons input{display:none}
   #rReasons span{display:block;text-align:center;padding:11px;border-radius:10px;border:1px solid var(--line);font-weight:700}
@@ -101,6 +101,19 @@
   @media (prefers-color-scheme: dark){ #rReasons input:checked + span{background:#1C2647} }
   .row2{display:grid;grid-template-columns:1fr 2fr;gap:8px}
   .records li.remote .d{color:var(--ot)}
+  /* 請假 */
+  .fld{display:block;margin-top:10px}
+  .fld > span{display:block;font-size:13px;color:var(--muted);margin-bottom:4px}
+  .fld input,.fld select{width:100%;font:inherit;font-size:16px;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--text);min-height:44px}
+  .dt{display:grid;grid-template-columns:1.4fr 1fr;gap:8px}
+  #lvHours{margin-top:8px;font-size:14px;color:var(--ot);font-weight:700;min-height:20px}
+  .lvlist{list-style:none;margin:0;padding:0}
+  .lvlist li{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line);font-size:14px}
+  .lvlist li:last-child{border-bottom:0}
+  .lvlist .w{color:var(--muted);font-size:12px;margin-top:2px}
+  .st{flex:none;font-size:12px;font-weight:700;padding:3px 9px;border-radius:99px;background:var(--hol-bg);color:var(--warn)}
+  .st.ok{background:var(--ok-bg);color:var(--ok-ink)} .st.no{background:var(--bad-bg);color:var(--danger)}
+  .lvlist li.empty{color:var(--muted);justify-content:center}
   [hidden]{display:none !important}
 </style>
 </head>
@@ -176,19 +189,42 @@
     </div>
     <button id="scanBtn" class="block ghost">📷 掃描機台 QR Code</button>
 
+    <h2>請假</h2>
+    <button id="leaveBtn" class="block ghost">📝 請假申請</button>
+    <div class="card" style="margin-top:10px"><ul id="leaveList" class="lvlist"></ul></div>
+
     <h2>今日紀錄</h2>
     <div class="card"><ul id="records" class="records"></ul></div>
   </section>
 </div>
 <div id="toast"></div>
 
+<!-- 請假申請 -->
+<div id="leaveSheet" class="sheet" hidden>
+  <div class="panel">
+    <h3>請假申請</h3>
+    <div id="lvWork" class="muted"></div>
+    <label class="fld"><span>假別</span><select id="lvType"></select></label>
+    <label class="fld"><span>開始</span><div class="dt"><input id="lvSD" type="date"><input id="lvST" type="time" step="1800"></div></label>
+    <label class="fld"><span>結束</span><div class="dt"><input id="lvED" type="date"><input id="lvET" type="time" step="1800"></div></label>
+    <div id="lvHours"></div>
+    <textarea id="lvReason" rows="2" maxlength="200" placeholder="事由（必填）"></textarea>
+    <div class="row2">
+      <button id="lvCancel" class="block ghost">取消</button>
+      <button id="lvSubmit" class="block">送出申請</button>
+    </div>
+  </div>
+</div>
+
 <!-- 外勤打卡（不在公司範圍時跳出） -->
-<div id="remoteSheet" hidden>
+<div id="remoteSheet" class="sheet" hidden>
   <div class="panel">
     <h3 id="rTitle">外勤打卡</h3>
     <div id="rDist" class="muted"></div>
     <div id="rReasons"></div>
     <textarea id="rNote" rows="2" maxlength="200" placeholder="說明（必填）：地點、客戶或課程名稱"></textarea>
+    <label class="fld" style="margin:0 0 12px"><span>油程公里數（來回合計，選填；同一趟只要填一次）</span>
+      <input id="rKm" type="number" inputmode="decimal" min="0" step="0.1" placeholder="例如 35"></label>
     <div class="row2">
       <button id="rCancel" class="block ghost">取消</button>
       <button id="rSubmit" class="block">送出外勤打卡</button>
@@ -205,7 +241,8 @@ const GAS_URL = 'https://script.google.com/macros/s/AKfycbz5Gazi-NR58_ofkMOYBjb9
 const T = { IN:'上班', LUNCH_OUT:'午休開始', LUNCH_IN:'午休結束', OUT:'下班', OT_IN:'加班開始', OT_OUT:'加班結束' };
 const $ = (id) => document.getElementById(id);
 const S = { dayType:'平日', machine:null, busy:false, records:{ punches:[], inspections:[], otOpen:false },
-  remoteReasons:['出差','上課','拜訪客戶','其他'], pending:null };
+  remoteReasons:['出差','上課','拜訪客戶','其他'], pending:null,
+  leaveTypes:['特休','事假','病假'], workTime:{ start:'08:00', end:'17:00' } };
 
 window.addEventListener('load', main);
 
@@ -234,6 +271,9 @@ async function boot(){
   $('who').textContent = r.emp.name;
   S.dayType = r.dayType;
   if (r.remoteReasons && r.remoteReasons.length) S.remoteReasons = r.remoteReasons;
+  if (r.leaveTypes && r.leaveTypes.length) S.leaveTypes = r.leaveTypes;
+  if (r.workTime) S.workTime = r.workTime;
+  setLeaves(r.leaves);
   $('date').textContent = `${r.date}（${r.weekday}）`;
   const b = $('dayBadge');
   b.textContent = r.dayType;
@@ -348,6 +388,7 @@ function openRemote(type, label, pos, dist){
     box.appendChild(l);
   });
   $('rNote').value = '';
+  $('rKm').value = '';
   $('remoteSheet').hidden = false;
 }
 
@@ -364,7 +405,9 @@ $('rSubmit').onclick = () => run(async () => {
   if (!p) return;
   toast('定位中…');
   const pos = await getPosition().catch(() => p.pos);  // 重新定位，失敗就用剛才的位置
-  const r = await api('punch', { type:p.type, ...pos, remote:{ reason:sel.value, note } });
+  const km = Number($('rKm').value) || 0;
+  if (km < 0 || km > 2000) throw new Error('油程公里數請填 0–2000');
+  const r = await api('punch', { type:p.type, ...pos, remote:{ reason:sel.value, note, km } });
   closeRemote();
   punchDone(p.label, r);
 });
@@ -433,6 +476,62 @@ $('mSubmit').onclick = () => run(async () => {
   closeMachine();
   toast(`✅ ${r.machine} 巡檢完成（${r.result}）`, r.result === '異常' ? 'warn' : 'ok');
 });
+
+/* ---------- 請假 ---------- */
+function todayStr(){ return new Date().toLocaleDateString('sv-SE', { timeZone:'Asia/Taipei' }); }
+
+$('leaveBtn').onclick = () => {
+  const sel = $('lvType');
+  sel.innerHTML = '';
+  S.leaveTypes.forEach(t => { const o = document.createElement('option'); o.value = o.textContent = t; sel.appendChild(o); });
+  const d = todayStr();
+  $('lvSD').value = $('lvED').value = d;
+  $('lvST').value = S.workTime.start; $('lvET').value = S.workTime.end;
+  $('lvReason').value = '';
+  $('lvWork').textContent = `上班時間 ${S.workTime.start}–${S.workTime.end}，時數會扣掉午休與假日，送出後由管理員核准。`;
+  lvPreview();
+  $('leaveSheet').hidden = false;
+};
+['lvSD','lvST','lvED','lvET'].forEach(id => $(id).addEventListener('change', () => {
+  if (id === 'lvSD' && $('lvED').value < $('lvSD').value) $('lvED').value = $('lvSD').value;
+  lvPreview();
+}));
+function lvPreview(){
+  const s = `${$('lvSD').value}T${$('lvST').value}`, e = `${$('lvED').value}T${$('lvET').value}`;
+  $('lvHours').textContent = (s && e && e > s) ? `${$('lvSD').value.slice(5)} ${$('lvST').value} → ${$('lvED').value.slice(5)} ${$('lvET').value}` : '結束時間必須晚於開始時間';
+}
+function closeLeave(){ $('leaveSheet').hidden = true; }
+$('lvCancel').onclick = closeLeave;
+$('leaveSheet').onclick = (e) => { if (e.target.id === 'leaveSheet') closeLeave(); };
+
+$('lvSubmit').onclick = () => run(async () => {
+  const start = `${$('lvSD').value}T${$('lvST').value}`, end = `${$('lvED').value}T${$('lvET').value}`;
+  const reason = $('lvReason').value.trim();
+  if (!$('lvSD').value || !$('lvST').value || !$('lvED').value || !$('lvET').value) throw new Error('請填寫開始與結束時間');
+  if (end <= start) throw new Error('結束時間必須晚於開始時間');
+  if (!reason) throw new Error('請填寫請假事由');
+  const r = await api('leave', { leaveType:$('lvType').value, start, end, reason });
+  closeLeave();
+  setLeaves(r.leaves);
+  toast(`✅ 已送出 ${$('lvType').value} ${r.hours} 小時，等待核准`, 'ok');
+});
+
+function setLeaves(list){
+  const ul = $('leaveList');
+  ul.innerHTML = '';
+  if (!list || !list.length){ ul.innerHTML = '<li class="empty">沒有請假紀錄</li>'; return; }
+  list.forEach(l => {
+    const li = document.createElement('li');
+    li.innerHTML = '<div><div class="h"></div><div class="w"></div></div><span class="st"></span>';
+    li.querySelector('.h').textContent = `${l.type} ${l.hours} 小時`;
+    li.querySelector('.w').textContent = `${l.start} → ${l.end}` + (l.memo ? `｜${l.memo}` : '');
+    const st = li.querySelector('.st');
+    st.textContent = l.status;
+    st.classList.toggle('ok', l.status === '核准');
+    st.classList.toggle('no', l.status === '駁回');
+    ul.appendChild(li);
+  });
+}
 
 /* ---------- 畫面 ---------- */
 function setRecords(rec){
