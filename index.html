@@ -59,6 +59,8 @@
   .pbtn.next{background:var(--accent);border-color:var(--accent);color:#fff}
   .pbtn.ot.next{background:var(--ot);border-color:var(--ot)}
   .pbtn.next small{color:rgba(255,255,255,.85)}
+  .pbtn.patrol{border-color:var(--cyan);color:var(--accent)}
+  .pbtn.patrol small{color:var(--muted)}
   .block{display:block;width:100%;padding:14px;border-radius:12px;font-size:16px;font-weight:700;background:var(--accent);color:#fff}
   .block.ghost{background:var(--card);border:1px solid var(--line);color:var(--text)}
   body.busy button{pointer-events:none;opacity:.55}
@@ -114,6 +116,15 @@
   .st{flex:none;font-size:12px;font-weight:700;padding:3px 9px;border-radius:99px;background:var(--hol-bg);color:var(--warn)}
   .st.ok{background:var(--ok-bg);color:var(--ok-ink)} .st.no{background:var(--bad-bg);color:var(--danger)}
   .lvlist li.empty{color:var(--muted);justify-content:center}
+  /* 打卡順序提示 */
+  .steps{display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin:12px 0;font-size:13px}
+  .steps span{padding:5px 9px;border-radius:99px;border:1px solid var(--line);color:var(--muted)}
+  .steps span.done{background:var(--ok-bg);color:var(--ok-ink);border-color:transparent}
+  .steps span.want{border-color:var(--danger);color:var(--danger);font-weight:700}
+  .steps i{color:var(--muted);font-style:normal}
+  #oMsg{font-size:16px;line-height:1.5;margin:8px 0 0}
+  .row1{display:grid;gap:8px}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
   /* 薪資總覽 */
   .payhead{display:flex;justify-content:space-between;align-items:center;gap:10px}
   .payhead select{font:inherit;font-size:16px;padding:8px 10px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--text)}
@@ -192,6 +203,9 @@
       </div>
     </div>
 
+    <h2>巡機</h2>
+    <button class="pbtn patrol" data-type="巡機" style="width:100%">🔧 巡機打卡<small>到公司巡檢生產中的零件尺寸，每次計費</small></button>
+
     <h2>機台巡檢</h2>
     <div id="machineCard" class="card" hidden>
       <div class="mhead">
@@ -212,8 +226,11 @@
     </div>
     <button id="scanBtn" class="block ghost">📷 掃描機台 QR Code</button>
 
-    <h2>請假</h2>
-    <button id="leaveBtn" class="block ghost">📝 請假申請</button>
+    <h2>請假／補卡</h2>
+    <div class="two">
+      <button id="leaveBtn" class="block ghost">📝 請假申請</button>
+      <button id="makeupBtn" class="block ghost">🕘 補卡申請</button>
+    </div>
     <div class="card" style="margin-top:10px"><ul id="leaveList" class="lvlist"></ul></div>
 
     <h2>今日紀錄</h2>
@@ -233,6 +250,34 @@
   </section>
 </div>
 <div id="toast"></div>
+
+<!-- 打卡順序不對 -->
+<div id="orderSheet" class="sheet" hidden>
+  <div class="panel">
+    <h3>⚠️ 打卡順序不對</h3>
+    <p id="oMsg"></p>
+    <div id="oSteps" class="steps"></div>
+    <div class="row1">
+      <button id="oMakeup" class="block" hidden></button>
+      <button id="oClose" class="block ghost">知道了</button>
+    </div>
+  </div>
+</div>
+
+<!-- 補卡申請 -->
+<div id="makeupSheet" class="sheet" hidden>
+  <div class="panel">
+    <h3>補卡申請</h3>
+    <div class="muted">忘記打卡時使用。送出後就可以繼續打下一個卡，管理員核准後才會算進出勤與薪資。</div>
+    <label class="fld"><span>要補的卡</span><select id="muType"></select></label>
+    <label class="fld"><span>忘記打卡的時間</span><div class="dt"><input id="muD" type="date"><input id="muT" type="time"></div></label>
+    <textarea id="muReason" rows="2" maxlength="200" placeholder="原因（必填），例如：午休回來忘記打卡"></textarea>
+    <div class="row2">
+      <button id="muCancel" class="block ghost">取消</button>
+      <button id="muSubmit" class="block">送出補卡</button>
+    </div>
+  </div>
+</div>
 
 <!-- 請假申請 -->
 <div id="leaveSheet" class="sheet" hidden>
@@ -273,11 +318,12 @@ const LIFF_ID = '2012074295-EES3q5iW';
 const GAS_URL = 'https://script.google.com/macros/s/AKfycbz5Gazi-NR58_ofkMOYBjb9blf_paqfI6hYaeDSN7PPTe95dU_DI67J8ZCj7CdvHCEa8g/exec';
 /* ========================== */
 
-const T = { IN:'上班', LUNCH_OUT:'午休開始', LUNCH_IN:'午休結束', OUT:'下班', OT_IN:'加班開始', OT_OUT:'加班結束' };
+const T = { IN:'上班', LUNCH_OUT:'午休開始', LUNCH_IN:'午休結束', OUT:'下班', OT_IN:'加班開始', OT_OUT:'加班結束', PATROL:'巡機' };
 const $ = (id) => document.getElementById(id);
 const S = { dayType:'平日', machine:null, busy:false, records:{ punches:[], inspections:[], otOpen:false },
   remoteReasons:['出差','上課','拜訪客戶','其他'], pending:null,
-  leaveTypes:['特休','事假','病假'], workTime:{ start:'08:00', end:'17:00' } };
+  leaveTypes:['特休','事假','病假'], workTime:{ start:'08:00', end:'17:00', lunchOut:'12:00', lunchIn:'13:00' },
+  leaves:[], makeups:[] };
 
 window.addEventListener('load', main);
 
@@ -308,6 +354,7 @@ async function boot(){
   if (r.remoteReasons && r.remoteReasons.length) S.remoteReasons = r.remoteReasons;
   if (r.leaveTypes && r.leaveTypes.length) S.leaveTypes = r.leaveTypes;
   if (r.workTime) S.workTime = r.workTime;
+  S.makeups = r.makeups || [];
   setLeaves(r.leaves);
   if (r.canViewPay){ $('paySection').hidden = false; loadPay(''); }
   $('date').textContent = `${r.date}（${r.weekday}）`;
@@ -342,7 +389,7 @@ async function api(action, data = {}){
   }
   if (!res.ok){
     const e = new Error(res.error || '發生錯誤');
-    e.code = res.code; e.dist = res.dist;
+    e.code = res.code; e.dist = res.dist; e.missing = res.missing;
     throw e;
   }
   return res;
@@ -385,6 +432,8 @@ document.querySelectorAll('[data-type]').forEach(btn => {
 
 function punch(type){
   const label = type.startsWith('加班') ? S.dayType + type : type;
+  const bad = orderCheck(type);
+  if (bad){ showOrder(type, bad); return; }
   if (!confirm(`確定打「${label}」卡？`)) return;
   run(async () => {
     toast('定位中…');
@@ -393,6 +442,7 @@ function punch(type){
     try{
       r = await api('punch', { type, ...pos });
     }catch(e){
+      if (e.code === 'ORDER'){ clearTimeout(toastTimer); $('toast').className = ''; showOrder(type, { msg:e.message, missing:e.missing }); return; }
       if (e.code !== 'OUT_OF_RANGE') throw e;
       clearTimeout(toastTimer); $('toast').className = '';
       openRemote(type, label, pos, e.dist);   // 不在公司 → 改走外勤打卡
@@ -407,6 +457,112 @@ function punchDone(label, r){
   const head = r.remote ? `✅ 外勤${label} 打卡成功 ${r.time}` : `✅ ${label} 打卡成功 ${r.time}`;
   toast(head + (r.warning ? `（${r.warning}）` : ''), r.warning ? 'warn' : 'ok');
 }
+
+/* ---------- 打卡順序 ---------- */
+const DAILY = [T.IN, T.LUNCH_OUT, T.LUNCH_IN, T.OUT];
+const toMin = (hm) => { const [h, m] = String(hm).split(':').map(Number); return h * 60 + m; };
+const nowMin = () => toMin(new Date().toLocaleTimeString('en-GB', { timeZone:'Asia/Taipei', hour12:false }));
+function todayHas(){
+  const has = {};
+  S.records.punches.forEach(p => { if (!has[p.type]) has[p.type] = p.time; });
+  return has;
+}
+/** 和後端相同的規則；回傳 null 或 { msg, missing } */
+function orderCheck(type){
+  if (type === T.PATROL) return null;
+  const has = todayHas(), q = (t) => `「${t}」`;
+  const lunchOut = toMin(S.workTime.lunchOut || '12:00'), lunchIn = toMin(S.workTime.lunchIn || '13:00');
+  if (DAILY.includes(type)){
+    if (has[type]) return { msg:`今天已經打過${q(type)}（${has[type]}），不用再打` };
+    if (type !== T.OUT && has[T.OUT]) return { msg:`今天已經打過${q(T.OUT)}，不能再打${q(type)}` };
+  }
+  const pmOnly = has[T.IN] && toMin(has[T.IN]) >= lunchOut;
+  switch (type){
+    case T.LUNCH_OUT:
+      if (!has[T.IN]) return { msg:`請先打${q(T.IN)}，再打${q(T.LUNCH_OUT)}`, missing:T.IN };
+      if (pmOnly) return { msg:`您是午休後才上班，今天不用打午休，下班時直接打${q(T.OUT)}` };
+      return null;
+    case T.LUNCH_IN:
+      if (!has[T.IN]) return { msg:`請先打${q(T.IN)}`, missing:T.IN };
+      if (!has[T.LUNCH_OUT]) return { msg:`請先打${q(T.LUNCH_OUT)}，再打${q(T.LUNCH_IN)}`, missing:T.LUNCH_OUT };
+      return null;
+    case T.OUT:
+      if (!has[T.IN]) return { msg:`今天還沒打${q(T.IN)}，不能下班`, missing:T.IN };
+      if (has[T.LUNCH_OUT] && !has[T.LUNCH_IN]) return { msg:`請先打${q(T.LUNCH_IN)}，再打${q(T.OUT)}`, missing:T.LUNCH_IN };
+      if (!has[T.LUNCH_OUT] && !pmOnly && nowMin() >= lunchIn)
+        return { msg:`今天還沒打午休，請先打${q(T.LUNCH_OUT)}和${q(T.LUNCH_IN)}（只上半天班的人可以不打）`, missing:T.LUNCH_OUT };
+      return null;
+    case T.OT_IN:
+      if (S.records.otOpen) return { msg:`上一次加班還沒打${q(T.OT_OUT)}`, missing:T.OT_OUT };
+      if (S.dayType === '平日'){
+        if (!has[T.IN]) return { msg:`今天還沒打${q(T.IN)}，平日要上班後才能加班`, missing:T.IN };
+        if (!has[T.OUT]) return { msg:`平日要先打${q(T.OUT)}，再打${q(T.OT_IN)}` };
+      }
+      return null;
+    case T.OT_OUT:
+      if (!S.records.otOpen) return { msg:`沒有進行中的加班，請先打${q(T.OT_IN)}`, missing:T.OT_IN };
+      return null;
+  }
+  return null;
+}
+
+function showOrder(type, bad){
+  $('oMsg').textContent = bad.msg;
+  const st = $('oSteps');
+  st.innerHTML = '';
+  const has = todayHas();
+  const seq = type.startsWith('加班') ? [T.OT_IN, T.OT_OUT] : DAILY;
+  seq.forEach((t, i) => {
+    if (i) { const a = document.createElement('i'); a.textContent = '→'; st.append(a); }
+    const sp = document.createElement('span');
+    sp.textContent = (has[t] || (t === T.OT_IN && S.records.otOpen) ? '✓ ' : '') + t;
+    if (has[t] || (t === T.OT_IN && S.records.otOpen)) sp.className = 'done';
+    if (t === bad.missing) sp.className = 'want';
+    st.append(sp);
+  });
+  const mb = $('oMakeup');
+  mb.hidden = !bad.missing;
+  if (bad.missing){
+    mb.textContent = `我忘了打「${bad.missing}」，申請補卡`;
+    mb.onclick = () => { $('orderSheet').hidden = true; openMakeup(bad.missing); };
+  }
+  $('orderSheet').hidden = false;
+}
+$('oClose').onclick = () => { $('orderSheet').hidden = true; };
+$('orderSheet').onclick = (e) => { if (e.target.id === 'orderSheet') $('orderSheet').hidden = true; };
+
+/* ---------- 補卡 ---------- */
+function defaultTime(type){
+  const w = S.workTime;
+  return { [T.IN]:w.start, [T.LUNCH_OUT]:w.lunchOut, [T.LUNCH_IN]:w.lunchIn, [T.OUT]:w.end }[type]
+    || new Date().toLocaleTimeString('en-GB', { timeZone:'Asia/Taipei', hour12:false }).slice(0, 5);
+}
+function openMakeup(type){
+  const sel = $('muType');
+  sel.innerHTML = '';
+  [T.IN, T.LUNCH_OUT, T.LUNCH_IN, T.OUT, T.OT_IN, T.OT_OUT].forEach(t => { const o = document.createElement('option'); o.value = o.textContent = t; sel.appendChild(o); });
+  sel.value = type || T.IN;
+  $('muD').value = todayStr();
+  $('muD').max = todayStr();
+  $('muT').value = defaultTime(sel.value);
+  $('muReason').value = '';
+  $('makeupSheet').hidden = false;
+}
+$('muType').onchange = () => { $('muT').value = defaultTime($('muType').value); };
+$('makeupBtn').onclick = () => openMakeup(T.IN);
+$('muCancel').onclick = () => { $('makeupSheet').hidden = true; };
+$('makeupSheet').onclick = (e) => { if (e.target.id === 'makeupSheet') $('makeupSheet').hidden = true; };
+$('muSubmit').onclick = () => run(async () => {
+  const type = $('muType').value, d = $('muD').value, t = $('muT').value, reason = $('muReason').value.trim();
+  if (!d || !t) throw new Error('請填寫忘記打卡的日期和時間');
+  if (!reason) throw new Error('請填寫原因');
+  const r = await api('makeup', { type, time:`${d}T${t}`, reason });
+  $('makeupSheet').hidden = true;
+  S.makeups = r.makeups || [];
+  setLeaves(S.leaves);
+  if (r.records) setRecords(r.records);
+  toast(`✅ 已送出「${type}」補卡（${d.slice(5)} ${t}），可以繼續打下一個卡`, 'ok');
+});
 
 /* ---------- 外勤打卡 ---------- */
 function openRemote(type, label, pos, dist){
@@ -553,14 +709,16 @@ $('lvSubmit').onclick = () => run(async () => {
 });
 
 function setLeaves(list){
+  S.leaves = list || [];
   const ul = $('leaveList');
   ul.innerHTML = '';
-  if (!list || !list.length){ ul.innerHTML = '<li class="empty">沒有請假紀錄</li>'; return; }
-  list.forEach(l => {
+  const all = S.leaves.map(l => ({ ...l, kind:'leave' })).concat((S.makeups || []).map(m => ({ ...m, kind:'makeup' })));
+  if (!all.length){ ul.innerHTML = '<li class="empty">沒有請假或補卡紀錄</li>'; return; }
+  all.forEach(l => {
     const li = document.createElement('li');
     li.innerHTML = '<div><div class="h"></div><div class="w"></div></div><span class="st"></span>';
-    li.querySelector('.h').textContent = `${l.type} ${l.hours} 小時`;
-    li.querySelector('.w').textContent = `${l.start} → ${l.end}` + (l.memo ? `｜${l.memo}` : '');
+    li.querySelector('.h').textContent = l.kind === 'leave' ? `${l.type} ${l.hours} 小時` : `補卡：${l.type}`;
+    li.querySelector('.w').textContent = (l.kind === 'leave' ? `${l.start} → ${l.end}` : l.time) + (l.memo ? `｜${l.memo}` : '');
     const st = li.querySelector('.st');
     st.textContent = l.status;
     st.classList.toggle('ok', l.status === '核准');
@@ -615,7 +773,7 @@ function renderPay(rows){
     const sm = document.createElement('small'); sm.textContent = x['員工編號'] || ''; d.querySelector('.n').append(sm);
     d.querySelector('.net').textContent = money(x['實發金額']);
     const det = d.querySelector('.paydet');
-    const plus = [['本薪','本薪'],['伙食津貼','伙食津貼'],['其他津貼','其他津貼'],['全勤獎金','全勤獎金'],['加班費','加班費'],['油資','油資'],['其他加項','其他加項']];
+    const plus = [['本薪','本薪'],['伙食津貼','伙食津貼'],['其他津貼','其他津貼'],['全勤獎金','全勤獎金'],['加班費','加班費'],['油資','油資'],['巡機費','巡機費'],['其他加項','其他加項']];
     const minus = [['遲到早退','遲到早退扣款'],['請假','請假扣款'],['曠職','曠職扣款'],['勞保','勞保'],['健保','健保'],['其他扣項','其他扣項']];
     const col = (title, list, sumKey) => {
       const c = document.createElement('div');
@@ -635,7 +793,7 @@ function renderPay(rows){
     };
     det.append(col('應發', plus, '應發合計'), col('應扣', minus, '應扣合計'));
     const meta = document.createElement('div'); meta.className = 'meta';
-    meta.textContent = `加班：平日 ${hrs(x['平日加班(h)'])}、休息日 ${hrs(x['休息日加班(h)'])}、假日 ${hrs(x['假日出勤(h)'])}　遲到早退 ${Number(x['遲到早退(分)']) || 0} 分　油程 ${Number(x['油程(km)']) || 0} km`;
+    meta.textContent = `加班：平日 ${hrs(x['平日加班(h)'])}、休息日 ${hrs(x['休息日加班(h)'])}、假日 ${hrs(x['假日出勤(h)'])}　遲到早退 ${Number(x['遲到早退(分)']) || 0} 分　油程 ${Number(x['油程(km)']) || 0} km　巡機 ${Number(x['巡機(次)']) || 0} 次`;
     det.append(meta);
     if (x['備註']){ const n = document.createElement('div'); n.className = 'note'; n.textContent = x['備註']; det.append(n); }
     li.append(d); ul.append(li);
@@ -649,7 +807,7 @@ function setRecords(rec){
   const items = [
     ...S.records.punches.map(p => ({
       time:p.time,
-      text:(p.category && p.category !== '正常' ? p.category.replace('加班','') : '') + p.type,
+      text:(p.category && p.category !== '正常' && p.category !== '巡機' ? p.category.replace('加班','') : '') + p.type,
       note:p.note, cls:(p.note || '').startsWith('外勤') ? 'remote' : '',
     })),
     ...S.records.inspections.map(i => ({
@@ -676,7 +834,9 @@ function setRecords(rec){
   const done = S.records.punches.map(p => p.type);
   let next = null;
   if (S.dayType !== '假日'){
-    next = [T.IN, T.LUNCH_OUT, T.LUNCH_IN, T.OUT].find(t => !done.includes(t)) || null;
+    const inP = S.records.punches.find(p => p.type === T.IN);
+    const pm = inP && toMin(inP.time) >= toMin(S.workTime.lunchOut || '12:00');
+    next = (done.includes(T.OUT) ? null : [T.IN, T.LUNCH_OUT, T.LUNCH_IN, T.OUT].filter(t => !(pm && (t === T.LUNCH_OUT || t === T.LUNCH_IN))).find(t => !done.includes(t))) || null;
   }
   const otNext = S.records.otOpen ? T.OT_OUT : null;
   document.querySelectorAll('[data-type]').forEach(b => {
