@@ -114,6 +114,29 @@
   .st{flex:none;font-size:12px;font-weight:700;padding:3px 9px;border-radius:99px;background:var(--hol-bg);color:var(--warn)}
   .st.ok{background:var(--ok-bg);color:var(--ok-ink)} .st.no{background:var(--bad-bg);color:var(--danger)}
   .lvlist li.empty{color:var(--muted);justify-content:center}
+  /* 薪資總覽 */
+  .payhead{display:flex;justify-content:space-between;align-items:center;gap:10px}
+  .payhead select{font:inherit;font-size:16px;padding:8px 10px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--text)}
+  .paytot{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+  .paytot div{background:var(--bg);border-radius:10px;padding:10px 12px}
+  .paytot b{display:block;font-size:20px;font-variant-numeric:tabular-nums;color:var(--ot)}
+  .paytot span{font-size:12px;color:var(--muted)}
+  .paylist{list-style:none;margin:10px 0 0;padding:0}
+  .paylist > li{border-top:1px solid var(--line)}
+  .paylist summary{list-style:none;display:flex;justify-content:space-between;align-items:center;padding:12px 2px;cursor:pointer}
+  .paylist summary::-webkit-details-marker{display:none}
+  .paylist summary .n{font-weight:700}
+  .paylist summary .n small{font-weight:400;color:var(--muted);margin-left:6px}
+  .paylist summary .net{font-weight:700;font-size:17px;font-variant-numeric:tabular-nums}
+  .paylist summary .net::after{content:"▸";display:inline-block;width:12px;margin-left:8px;color:var(--muted);font-size:13px}
+  .paylist details[open] summary .net::after{content:"▾"}
+  .paydet{display:grid;grid-template-columns:1fr 1fr;gap:4px 16px;padding:0 2px 12px;font-size:14px}
+  .paydet h4{margin:6px 0 2px;font-size:12px;color:var(--muted);font-weight:600}
+  .paydet .kv{display:flex;justify-content:space-between;gap:6px}
+  .paydet .kv b{font-weight:600;font-variant-numeric:tabular-nums}
+  .paydet .kv.sum{border-top:1px solid var(--line);padding-top:4px;margin-top:2px;font-weight:700}
+  .paydet .note{grid-column:1 / -1;font-size:12px;color:var(--warn);background:var(--hol-bg);border-radius:8px;padding:6px 8px;margin-top:6px}
+  .paydet .meta{grid-column:1 / -1;font-size:12px;color:var(--muted);margin-top:4px}
   [hidden]{display:none !important}
 </style>
 </head>
@@ -195,6 +218,18 @@
 
     <h2>今日紀錄</h2>
     <div class="card"><ul id="records" class="records"></ul></div>
+
+    <!-- 只有「可看薪資」的人看得到 -->
+    <section id="paySection" hidden>
+      <h2>薪資總覽（僅限授權人員）</h2>
+      <div class="card">
+        <div class="payhead">
+          <select id="payMonth" aria-label="月份"></select>
+          <span id="payGen" class="muted"></span>
+        </div>
+        <div id="payBody"></div>
+      </div>
+    </section>
   </section>
 </div>
 <div id="toast"></div>
@@ -274,6 +309,7 @@ async function boot(){
   if (r.leaveTypes && r.leaveTypes.length) S.leaveTypes = r.leaveTypes;
   if (r.workTime) S.workTime = r.workTime;
   setLeaves(r.leaves);
+  if (r.canViewPay){ $('paySection').hidden = false; loadPay(''); }
   $('date').textContent = `${r.date}（${r.weekday}）`;
   const b = $('dayBadge');
   b.textContent = r.dayType;
@@ -531,6 +567,80 @@ function setLeaves(list){
     st.classList.toggle('no', l.status === '駁回');
     ul.appendChild(li);
   });
+}
+
+/* ---------- 薪資總覽 ---------- */
+const money = (n) => (Math.round(Number(n) || 0)).toLocaleString('zh-TW');
+const hrs = (n) => (Number(n) || 0) ? `${Number(n)}h` : '0';
+
+async function loadPay(month){
+  $('payBody').innerHTML = '<p class="muted" style="text-align:center">讀取中…</p>';
+  let r;
+  try{ r = await api('payroll', { month }); }
+  catch(e){ $('payBody').innerHTML = ''; const p = document.createElement('p'); p.className = 'muted'; p.textContent = e.message; $('payBody').append(p); return; }
+  const sel = $('payMonth');
+  sel.innerHTML = '';
+  if (!r.months.length){
+    sel.hidden = true;
+    $('payBody').innerHTML = '<p class="muted" style="text-align:center">還沒有產生任何月份的薪資。<br>請在試算表選單按「打卡系統 → 產生上月薪資」。</p>';
+    return;
+  }
+  sel.hidden = false;
+  r.months.forEach(m => { const o = document.createElement('option'); o.value = m; o.textContent = m.replace('-', ' 年 ') + ' 月'; sel.appendChild(o); });
+  sel.value = r.month;
+  $('payGen').textContent = r.generated ? `更新於 ${r.generated.slice(5)}` : '';
+  renderPay(r.rows);
+}
+$('payMonth').onchange = () => loadPay($('payMonth').value);
+
+function renderPay(rows){
+  const box = $('payBody');
+  box.innerHTML = '';
+  const tot = rows.reduce((a, x) => a + (Number(x['實發金額']) || 0), 0);
+  const ot = rows.reduce((a, x) => a + (Number(x['加班費']) || 0), 0);
+  const t = document.createElement('div');
+  t.className = 'paytot';
+  t.innerHTML = '<div><span>實發合計</span><b></b></div><div><span>加班費合計</span><b></b></div>';
+  t.querySelectorAll('b')[0].textContent = money(tot);
+  t.querySelectorAll('b')[1].textContent = money(ot);
+  box.append(t);
+
+  const ul = document.createElement('ul');
+  ul.className = 'paylist';
+  rows.forEach(x => {
+    const li = document.createElement('li');
+    const d = document.createElement('details');
+    d.innerHTML = '<summary><span class="n"></span><span class="net"></span></summary><div class="paydet"></div>';
+    d.querySelector('.n').textContent = x['姓名'] || '';
+    const sm = document.createElement('small'); sm.textContent = x['員工編號'] || ''; d.querySelector('.n').append(sm);
+    d.querySelector('.net').textContent = money(x['實發金額']);
+    const det = d.querySelector('.paydet');
+    const plus = [['本薪','本薪'],['伙食津貼','伙食津貼'],['其他津貼','其他津貼'],['全勤獎金','全勤獎金'],['加班費','加班費'],['油資','油資'],['其他加項','其他加項']];
+    const minus = [['遲到早退','遲到早退扣款'],['請假','請假扣款'],['曠職','曠職扣款'],['勞保','勞保'],['健保','健保'],['其他扣項','其他扣項']];
+    const col = (title, list, sumKey) => {
+      const c = document.createElement('div');
+      const h = document.createElement('h4'); h.textContent = title; c.append(h);
+      list.forEach(([label, key]) => {
+        const v = Number(x[key]) || 0;
+        if (!v && label !== '本薪') return;
+        const kv = document.createElement('div'); kv.className = 'kv';
+        kv.innerHTML = '<span></span><b></b>';
+        kv.children[0].textContent = label; kv.children[1].textContent = money(v);
+        c.append(kv);
+      });
+      const s = document.createElement('div'); s.className = 'kv sum'; s.innerHTML = '<span></span><b></b>';
+      s.children[0].textContent = sumKey; s.children[1].textContent = money(x[sumKey]);
+      c.append(s);
+      return c;
+    };
+    det.append(col('應發', plus, '應發合計'), col('應扣', minus, '應扣合計'));
+    const meta = document.createElement('div'); meta.className = 'meta';
+    meta.textContent = `加班：平日 ${hrs(x['平日加班(h)'])}、休息日 ${hrs(x['休息日加班(h)'])}、假日 ${hrs(x['假日出勤(h)'])}　遲到早退 ${Number(x['遲到早退(分)']) || 0} 分　油程 ${Number(x['油程(km)']) || 0} km`;
+    det.append(meta);
+    if (x['備註']){ const n = document.createElement('div'); n.className = 'note'; n.textContent = x['備註']; det.append(n); }
+    li.append(d); ul.append(li);
+  });
+  box.append(ul);
 }
 
 /* ---------- 畫面 ---------- */
