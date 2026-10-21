@@ -125,6 +125,26 @@
   #oMsg{font-size:16px;line-height:1.5;margin:8px 0 0}
   .row1{display:grid;gap:8px}
   .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  /* 待核准 */
+  .aphead{display:flex;justify-content:space-between;align-items:center;margin:18px 4px 8px}
+  .aphead h2{margin:0}
+  .cnt{display:inline-block;min-width:20px;padding:1px 7px;border-radius:99px;background:var(--danger);color:#fff;font-size:12px;text-align:center;margin-left:6px;vertical-align:1px}
+  .cnt.zero{background:var(--line);color:var(--muted)}
+  .refresh{background:none;color:var(--accent);font-size:14px;padding:4px 6px}
+  .apcard{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:10px}
+  .aptop{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+  .apname{font-weight:700;font-size:16px}
+  .kind{font-size:12px;font-weight:700;padding:2px 8px;border-radius:99px;margin-right:6px;vertical-align:1px}
+  .kind.leave{background:#E7EEFF;color:var(--ot)} .kind.makeup{background:var(--hol-bg);color:var(--warn)}
+  .apwhat{margin-top:6px;font-size:15px}
+  .apwhat b{font-variant-numeric:tabular-nums}
+  .aprs{margin-top:6px;font-size:14px;color:var(--muted)}
+  .apctx{margin-top:6px;font-size:12px;color:var(--muted);background:var(--bg);border-radius:8px;padding:6px 8px}
+  .apbtn{display:grid;grid-template-columns:1fr 1.4fr;gap:8px;margin-top:12px}
+  .apbtn button{padding:11px;border-radius:10px;font-weight:700;font-size:15px}
+  .apbtn .no{background:var(--card);border:1px solid var(--danger);color:var(--danger)}
+  .apbtn .yes{background:var(--accent);color:#fff}
+  .apempty{text-align:center;color:var(--muted);padding:18px 0}
   /* 薪資總覽 */
   .payhead{display:flex;justify-content:space-between;align-items:center;gap:10px}
   .payhead select{font:inherit;font-size:16px;padding:8px 10px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--text)}
@@ -233,6 +253,12 @@
     </div>
     <div class="card" style="margin-top:10px"><ul id="leaveList" class="lvlist"></ul></div>
 
+    <!-- 只有「可核准請假補卡」的人看得到 -->
+    <section id="apSection" hidden>
+      <div class="aphead"><h2>待核准<span id="apCnt" class="cnt zero">0</span></h2><button id="apRefresh" class="refresh">↻ 重新整理</button></div>
+      <div id="apList"></div>
+    </section>
+
     <h2>今日紀錄</h2>
     <div class="card"><ul id="records" class="records"></ul></div>
 
@@ -323,7 +349,7 @@ const $ = (id) => document.getElementById(id);
 const S = { dayType:'平日', machine:null, busy:false, records:{ punches:[], inspections:[], otOpen:false },
   remoteReasons:['出差','上課','拜訪客戶','其他'], pending:null,
   leaveTypes:['特休','事假','病假'], workTime:{ start:'08:00', end:'17:00', lunchOut:'12:00', lunchIn:'13:00' },
-  leaves:[], makeups:[] };
+  leaves:[], makeups:[], halfDay:{ am:false, pm:false } };
 
 window.addEventListener('load', main);
 
@@ -355,8 +381,10 @@ async function boot(){
   if (r.leaveTypes && r.leaveTypes.length) S.leaveTypes = r.leaveTypes;
   if (r.workTime) S.workTime = r.workTime;
   S.makeups = r.makeups || [];
+  S.halfDay = r.halfDay || { am:false, pm:false };
   setLeaves(r.leaves);
   if (r.canViewPay){ $('paySection').hidden = false; loadPay(''); }
+  if (r.canApprove){ $('apSection').hidden = false; loadPending(); }
   $('date').textContent = `${r.date}（${r.weekday}）`;
   const b = $('dayBadge');
   b.textContent = r.dayType;
@@ -471,16 +499,15 @@ function todayHas(){
 function orderCheck(type){
   if (type === T.PATROL) return null;
   const has = todayHas(), q = (t) => `「${t}」`;
-  const lunchOut = toMin(S.workTime.lunchOut || '12:00'), lunchIn = toMin(S.workTime.lunchIn || '13:00');
   if (DAILY.includes(type)){
     if (has[type]) return { msg:`今天已經打過${q(type)}（${has[type]}），不用再打` };
     if (type !== T.OUT && has[T.OUT]) return { msg:`今天已經打過${q(T.OUT)}，不能再打${q(type)}` };
   }
-  const pmOnly = has[T.IN] && toMin(has[T.IN]) >= lunchOut;
+  const halfDay = S.halfDay.am || S.halfDay.pm;   // 當天請了半天假才可以不打午休
   switch (type){
     case T.LUNCH_OUT:
       if (!has[T.IN]) return { msg:`請先打${q(T.IN)}，再打${q(T.LUNCH_OUT)}`, missing:T.IN };
-      if (pmOnly) return { msg:`您是午休後才上班，今天不用打午休，下班時直接打${q(T.OUT)}` };
+      if (S.halfDay.am) return { msg:`您今天上午請假，不用打午休，下班時直接打${q(T.OUT)}` };
       return null;
     case T.LUNCH_IN:
       if (!has[T.IN]) return { msg:`請先打${q(T.IN)}`, missing:T.IN };
@@ -489,8 +516,8 @@ function orderCheck(type){
     case T.OUT:
       if (!has[T.IN]) return { msg:`今天還沒打${q(T.IN)}，不能下班`, missing:T.IN };
       if (has[T.LUNCH_OUT] && !has[T.LUNCH_IN]) return { msg:`請先打${q(T.LUNCH_IN)}，再打${q(T.OUT)}`, missing:T.LUNCH_IN };
-      if (!has[T.LUNCH_OUT] && !pmOnly && nowMin() >= lunchIn)
-        return { msg:`今天還沒打午休，請先打${q(T.LUNCH_OUT)}和${q(T.LUNCH_IN)}（只上半天班的人可以不打）`, missing:T.LUNCH_OUT };
+      if (!has[T.LUNCH_OUT] && !halfDay)
+        return { msg:`還沒打午休，請依順序先打${q(T.LUNCH_OUT)}、${q(T.LUNCH_IN)}，最後才打${q(T.OUT)}`, missing:T.LUNCH_OUT };
       return null;
     case T.OT_IN:
       if (S.records.otOpen) return { msg:`上一次加班還沒打${q(T.OT_OUT)}`, missing:T.OT_OUT };
@@ -704,7 +731,9 @@ $('lvSubmit').onclick = () => run(async () => {
   if (!reason) throw new Error('請填寫請假事由');
   const r = await api('leave', { leaveType:$('lvType').value, start, end, reason });
   closeLeave();
+  if (r.halfDay) S.halfDay = r.halfDay;
   setLeaves(r.leaves);
+  setRecords(S.records);
   toast(`✅ 已送出 ${$('lvType').value} ${r.hours} 小時，等待核准`, 'ok');
 });
 
@@ -724,6 +753,70 @@ function setLeaves(list){
     st.classList.toggle('ok', l.status === '核准');
     st.classList.toggle('no', l.status === '駁回');
     ul.appendChild(li);
+  });
+}
+
+/* ---------- 待核准（請假、補卡） ---------- */
+async function loadPending(){
+  $('apList').innerHTML = '<div class="apempty">讀取中…</div>';
+  try{ renderPending(await api('pending')); }
+  catch(e){ $('apList').innerHTML = ''; const d = document.createElement('div'); d.className = 'apempty'; d.textContent = e.message; $('apList').append(d); }
+}
+$('apRefresh').onclick = () => loadPending();
+
+function renderPending(r){
+  const items = (r.leaves || []).map(x => ({ ...x, kind:'leave' })).concat((r.makeups || []).map(x => ({ ...x, kind:'makeup' })))
+    .sort((a, b) => a.ts - b.ts);
+  const c = $('apCnt');
+  c.textContent = items.length;
+  c.classList.toggle('zero', !items.length);
+  const box = $('apList');
+  box.innerHTML = '';
+  if (!items.length){ box.innerHTML = '<div class="apcard apempty">目前沒有待核准的申請 👍</div>'; return; }
+  items.forEach(x => {
+    const card = document.createElement('div');
+    card.className = 'apcard';
+    card.innerHTML = '<div class="aptop"><div class="apname"><span class="kind"></span><span class="nm"></span></div><span class="muted ap"></span></div>' +
+      '<div class="apwhat"></div><div class="aprs"></div><div class="apctx" hidden></div>' +
+      '<div class="apbtn"><button class="no">駁回</button><button class="yes">核准</button></div>';
+    const k = card.querySelector('.kind');
+    k.className = 'kind ' + x.kind;
+    k.textContent = x.kind === 'leave' ? '請假' : '補卡';
+    card.querySelector('.nm').textContent = x.name;
+    card.querySelector('.ap').textContent = x.applied ? `申請 ${x.applied}` : '';
+    const w = card.querySelector('.apwhat');
+    if (x.kind === 'leave'){
+      w.innerHTML = '<b class="t"></b>　<span class="h"></span><div class="muted r"></div>';
+      w.querySelector('.t').textContent = x.type;
+      w.querySelector('.h').textContent = `${x.hours} 小時`;
+      w.querySelector('.r').textContent = `${x.start} → ${x.end}`;
+    } else {
+      w.innerHTML = '補「<b class="t"></b>」　<span class="h"></span>';
+      w.querySelector('.t').textContent = x.type;
+      w.querySelector('.h').textContent = x.time;
+      const ctx = card.querySelector('.apctx');
+      ctx.hidden = false;
+      ctx.textContent = `當天打卡：${x.dayPunches}`;
+    }
+    card.querySelector('.aprs').textContent = `${x.kind === 'leave' ? '事由' : '原因'}：${x.reason || '（未填）'}`;
+    card.querySelector('.yes').onclick = () => decide(x, '核准');
+    card.querySelector('.no').onclick = () => decide(x, '駁回');
+    box.append(card);
+  });
+}
+
+function decide(x, decision){
+  const what = x.kind === 'leave' ? `${x.name} 的${x.type} ${x.hours} 小時` : `${x.name} 補「${x.type}」${x.time}`;
+  let memo = '';
+  if (decision === '駁回'){
+    const m = prompt(`駁回 ${what}\n請填寫駁回原因（員工看得到，可留空）：`, '');
+    if (m === null) return;
+    memo = m.trim();
+  } else if (!confirm(`確定核准 ${what}？`)) return;
+  run(async () => {
+    const r = await api('decide', { kind:x.kind, row:x.row, ts:x.ts, decision, memo });
+    renderPending(r);
+    toast(`${decision === '核准' ? '✅ 已核准' : '已駁回'}：${r.done ? r.done.name : ''}`, decision === '核准' ? 'ok' : 'warn');
   });
 }
 
@@ -834,8 +927,7 @@ function setRecords(rec){
   const done = S.records.punches.map(p => p.type);
   let next = null;
   if (S.dayType !== '假日'){
-    const inP = S.records.punches.find(p => p.type === T.IN);
-    const pm = inP && toMin(inP.time) >= toMin(S.workTime.lunchOut || '12:00');
+    const pm = S.halfDay && (S.halfDay.am || S.halfDay.pm);
     next = (done.includes(T.OUT) ? null : [T.IN, T.LUNCH_OUT, T.LUNCH_IN, T.OUT].filter(t => !(pm && (t === T.LUNCH_OUT || t === T.LUNCH_IN))).find(t => !done.includes(t))) || null;
   }
   const otNext = S.records.otOpen ? T.OT_OUT : null;
